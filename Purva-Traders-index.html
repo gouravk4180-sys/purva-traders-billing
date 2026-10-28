@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Purva Traders — Grocery Billing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<style id="pageStyle">@page{margin:0}</style>
+<style>
+/* Layout: one working screen. Left = speak/add items and the bill lines; right = totals, cash, receipt preview. */
+:root{
+  --bg:#EEF1F4; --surface:#FFFFFF; --ink:#0F1B26; --muted:#5B6B7A; --line:#D5DCE3;
+  --accent:#0A6C74; --accent-ink:#FFFFFF; --soft:#E1F0F1; --rec:#C62828; --ok:#1B7F4B; --warn:#9A5B00; --warn-bg:#FFF3DC;
+  --sans:"IBM Plex Sans","Noto Sans Devanagari",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0B131A;--surface:#131E27;--ink:#E6EDF3;--muted:#92A4B4;--line:#263644;--accent:#3FB6BF;--accent-ink:#04181A;--soft:#123037;--rec:#EF6A6A;--ok:#4CC88A;--warn:#E8A94A;--warn-bg:#3A2D12;color-scheme:dark}
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;-webkit-text-size-adjust:100%}
+h1,h2,h3{margin:0;font-weight:600;text-wrap:balance}
+h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+button,input,select,textarea{font:inherit;color:inherit}
+.app{max-width:1120px;margin:0 auto;padding-block:12px 40px;padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px))}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding-bottom:12px}
+.brandmark{width:76px;height:76px;flex:none}.brandmark svg{width:100%;height:100%}.brand{display:flex;flex-direction:column;min-width:0;flex:1 1 200px}.brand h1{font-size:25px;color:#0b604b}.lang-toggle{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}.lang-toggle button{border:0;background:transparent;padding:8px 13px;min-height:40px;cursor:pointer}.lang-toggle button.active{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.brand h1{font-size:20px;overflow-wrap:anywhere}
+.sub{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.today{font-size:13px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-variant-numeric:tabular-nums}
+.today b{color:var(--ink);font-family:var(--mono);font-weight:600}
+.tabs{display:flex;gap:0;flex:1 1 100%;border-bottom:1px solid var(--line)}
+.tabs button{flex:1 1 0;min-width:0;background:none;border:0;border-bottom:3px solid transparent;padding:10px 4px;min-height:48px;cursor:pointer;color:var(--muted);font-weight:500;text-align:center;touch-action:manipulation}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tabs button:focus-visible,.btn:focus-visible,.chip:focus-visible,.icon:focus-visible,.mic:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.billing{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.left,.right{display:flex;flex-direction:column;gap:16px;min-width:0}
+.right{position:sticky;top:8px}
+@media (max-width:620px){.brandmark{width:56px;height:56px}.brand h1{font-size:21px}.lang-toggle{margin-left:auto}}
+@media (max-width:900px){.billing{grid-template-columns:minmax(0,1fr)}.right{position:static}}
+input,select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:9px 10px;min-height:44px;width:100%;min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+textarea{resize:vertical;min-height:84px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:10px 16px;min-height:44px;cursor:pointer;font-weight:500}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--rec)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.big{font-size:17px;min-height:52px;width:100%}
+.voice-top{display:flex;align-items:center;gap:14px}
+.mic{flex:none;width:64px;height:64px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer;display:grid;place-items:center}
+.mic svg{width:28px;height:28px}
+.mic.live{background:var(--rec);animation:pulse 1.4s ease-out infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rec) 55%,transparent)}100%{box-shadow:0 0 0 16px transparent}}
+@media (prefers-reduced-motion:reduce){.mic.live{animation:none}}
+.voice-top .txt{min-width:0;flex:1}
+.voice-top .txt strong{display:block}
+.hint{font-size:13px;color:var(--muted)}
+.vs{font-size:13px;color:var(--muted);min-height:1.4em}
+.vs.err{color:var(--rec)}
+.help{border:1px solid var(--warn);background:var(--warn-bg);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.help ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.notice{border:1px solid var(--warn);background:var(--warn-bg);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.notice span{flex:1 1 220px}
+.stack{display:flex;flex-direction:column;gap:16px}
+.vrow{display:flex;flex-wrap:wrap;gap:8px}
+.vrow select{flex:1 1 150px;width:auto}
+.vrow .btn{flex:1 1 120px}
+.addrow,.rowhead,.row{display:grid;gap:8px;align-items:center}
+.addrow{grid-template-columns:minmax(0,1fr) 72px 72px 92px auto;grid-template-areas:"n q u r b"}
+.row,.rowhead{grid-template-columns:minmax(0,1fr) 72px 72px 92px 96px 40px;grid-template-areas:"n q u r a x"}
+.row{padding:8px 0;border-top:1px solid var(--line)}
+.rowhead{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.f-name{grid-area:n}.f-qty{grid-area:q}.f-unit{grid-area:u}.f-rate{grid-area:r}.f-amt{grid-area:a}.icon{grid-area:x}.f-add{grid-area:b}
+.f-qty,.f-rate,.f-amt,.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.f-qty,.f-rate{text-align:right}
+.f-amt{text-align:right;font-weight:600;font-size:15px;overflow-wrap:anywhere}
+.row .f-rate.warn{border-color:var(--warn);background:var(--warn-bg)}
+.icon{width:40px;height:40px;border:0;background:none;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;border-radius:6px}
+.icon:hover{color:var(--rec)}
+.empty{margin:0;padding:18px 0;text-align:center;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:999px;padding:7px 14px;min-height:40px;cursor:pointer;font-size:14px}
+.chip small{font-family:var(--mono);color:var(--muted);margin-left:6px}
+@media (max-width:620px){
+  .addrow{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"n n n n" "q u r b"}
+  .rowhead{display:none}
+  .row{grid-template-columns:repeat(4,minmax(0,1fr)) 40px;grid-template-areas:"n n n n x" "q u r a a"}
+}
+.line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums}
+.line .num{font-weight:500}
+.line.sub-l{color:var(--muted);font-size:14px}
+.grand{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:10px 0;border-block:2px solid var(--ink)}
+.grand span:first-child{font-weight:600;letter-spacing:.04em}
+.grand .num{font-size:30px;font-weight:600;overflow-wrap:anywhere}
+.disc{display:grid;grid-template-columns:minmax(0,1fr) 84px;gap:8px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+.change{font-family:var(--mono);font-weight:600}
+.change.ok{color:var(--ok)}.change.due{color:var(--rec)}
+.actions{display:flex;flex-direction:column;gap:8px}
+.table{width:100%;border-collapse:collapse;font-size:14px}
+.table th{text-align:left;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:500;padding:6px 8px 6px 0}
+.table td{padding:6px 8px 6px 0;border-top:1px solid var(--line);vertical-align:middle}
+.scroll{overflow-x:auto}
+.hist{display:flex;flex-direction:column}
+.hist .h{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.hist .h:first-child{border-top:0}
+.hist .info{flex:1;min-width:0}
+.hist .info b{font-family:var(--mono)}
+.hist .tot{font-family:var(--mono);font-weight:600}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;max-width:calc(100% - 32px);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
+.toast.on{opacity:1}
+[hidden]{display:none!important}
+
+/* Receipt: always black on white, it is paper. */
+.receipt{background:#fff;color:#000;font-family:var(--mono);font-size:12px;line-height:1.35;padding:10px 8px;margin-inline:auto}
+.paper-58{width:54mm}.paper-80{width:76mm}.paper-a4{width:100%;max-width:180mm;font-size:13px;padding:14px}
+.receipt .c{text-align:center}
+.receipt .shop{font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.receipt .dash{border-top:1px dashed #000;margin:6px 0}
+.receipt .r2{display:flex;justify-content:space-between;gap:8px}
+.receipt .rn{font-weight:500;overflow-wrap:anywhere}
+.receipt .ri{margin-bottom:4px}
+.receipt .tot{font-size:15px;font-weight:600}
+.receipt .meta{font-size:11px}
+#printCopy{display:none}
+#receiptPreview{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
+@media print{
+  body{background:#fff}
+  .app,.toast{display:none!important}
+  #printCopy{display:block!important}
+  .receipt{padding:2mm}
+  .paper-a4{padding:0}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brandmark" aria-hidden="true"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" fill="#fff8df" stroke="#c99a28" stroke-width="3"/><circle cx="50" cy="50" r="39" fill="#0a6c54" stroke="#e2b84e" stroke-width="2"/><path d="M23 62h54l-6 10H29z" fill="#d9a52d"/><path d="M29 42h42v20H29z" fill="#fff0c2"/><path d="M25 42l7-13h36l7 13z" fill="#c63f2e"/><path d="M32 29h9v13h-9zm18 0h9v13h-9z" fill="#fff5d6"/><path d="M35 52c-8-8-12-15-9-22 8 3 13 10 13 19m26 3c8-8 12-15 9-22-8 3-13 10-13 19" fill="#65a64a" stroke="#dce9a0" stroke-width="1.5"/><path d="M38 56h24v9H38z" fill="#e7b94c"/><text x="50" y="84" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">PURVA</text></svg></div>
+    <div class="brand"><h1 id="brandName">Purva Traders</h1><span class="sub" id="billNoLbl">पूर्वा ट्रेडर्स • किराणा आणि दैनंदिन वस्तू</span></div>
+    <div class="lang-toggle" role="group" aria-label="Display language"><button type="button" id="uiEnglish" class="active">English</button><button type="button" id="uiMarathi">मराठी</button></div>
+    <div class="today" id="todayChip"></div>
+    <nav class="tabs" aria-label="Sections">
+      <button type="button" data-tab="bill" class="on" aria-current="page" data-en="Billing" data-mr="बिलिंग">Billing</button>
+      <button type="button" data-tab="items" data-en="Items" data-mr="वस्तू">Items</button>
+      <button type="button" data-tab="history" data-en="Bills" data-mr="बिले">Bills</button>
+      <button type="button" data-tab="customers" data-en="Customers / उधार" data-mr="ग्राहक / उधार">Customers / उधार</button>
+      <button type="button" data-tab="settings" data-en="Settings" data-mr="सेटिंग्ज">Settings</button>
+    </nav>
+  </header>
+
+  <div class="notice" id="notice" role="status" hidden></div>
+  <main>
+    <section id="tab-bill" class="billing">
+      <div class="left">
+        <div class="card">
+          <div class="voice-top">
+            <button type="button" class="mic" id="micBtn" aria-pressed="false" aria-label="Start speaking your list">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </button>
+            <div class="txt"><strong id="micLabel">Tap and speak your list</strong>
+              <span class="hint">Say quantity first. Example: "2 kg sugar 45, 1 soap 30, 3 biscuit 10". Pause between items.</span></div>
+          </div>
+          <textarea id="voiceBox" aria-label="Spoken list" placeholder="Your spoken list appears here. You can also type it, or use the microphone key on your phone keyboard."></textarea>
+          <div class="vrow">
+            <select id="langSel" aria-label="Speaking language">
+              <option value="en-IN">English (India)</option>
+              <option value="hi-IN">हिन्दी</option>
+              <option value="mr-IN">मराठी</option>
+              <option value="gu-IN">ગુજરાતી</option>
+              <option value="ta-IN">தமிழ்</option>
+              <option value="te-IN">తెలుగు</option>
+              <option value="kn-IN">ಕನ್ನಡ</option>
+              <option value="bn-IN">বাংলা</option>
+            </select>
+            <button type="button" class="btn primary" id="voiceAdd">Add to bill</button>
+          </div>
+          <div class="vs" id="voiceStatus" role="status" aria-live="polite"></div>
+          <div class="help" id="micHelp" hidden>
+            <strong>Allow the microphone for this page</strong>
+            <ol>
+              <li>Tap the icon at the left of the address bar (lock or settings icon).</li>
+              <li>Open <b>Permissions</b> (or <b>Site settings</b>), then <b>Microphone</b>, and choose <b>Allow</b>.</li>
+              <li>Come back here and tap <b>Try again</b>.</li>
+            </ol>
+            <p class="hint" id="micHelpNote" style="margin:0"></p>
+            <button type="button" class="btn primary" id="micRetry">Try again</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 data-label-key="billItems">Bill items</h2>
+          <form id="addForm" class="addrow" autocomplete="off">
+            <input class="f-name" id="addName" list="masterList" placeholder="Item name" aria-label="Item name">
+            <input class="f-qty" id="addQty" inputmode="decimal" value="1" aria-label="Quantity">
+            <input class="f-unit" id="addUnit" list="units" placeholder="Unit" aria-label="Unit">
+            <input class="f-rate" id="addRate" inputmode="decimal" placeholder="Rate" aria-label="Rate">
+            <button class="btn primary f-add" type="submit">Add</button>
+          </form>
+          <div class="rowhead" aria-hidden="true"><span style="grid-area:n">Item</span><span style="grid-area:q;text-align:right">Qty</span><span style="grid-area:u">Unit</span><span style="grid-area:r;text-align:right">Rate</span><span style="grid-area:a;text-align:right">Amount</span></div>
+          <div id="rows"></div>
+          <div>
+            <div class="hint" style="margin-bottom:6px" id="chipsHint" data-label-key="quick">Quick add</div>
+            <div class="chips" id="chips"></div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="right">
+        <div class="card">
+          <h2>Customer &amp; payment / ग्राहक व पेमेंट</h2>
+          <div class="grid2">
+            <label class="f"><span>Bill type / बिल प्रकार</span><select id="billType"><option value="retail">Retail — सामान्य</option><option value="credit">Credit — उधार</option></select></label>
+            <label class="f"><span>Customer / ग्राहक</span><select id="billCustomer"><option value="">Walk-in / सामान्य ग्राहक</option></select></label>
+          </div>
+          <p class="hint" id="creditHint" style="margin:8px 0 0">Retail bill: customer details are optional.</p>
+          <div class="line sub-l" style="margin-top:12px"><span data-label-key="subtotal">Subtotal</span><span class="num" id="subtotal">0</span></div>
+          <div class="disc">
+            <label class="f"><span data-label-key="discount">Discount</span><input id="disc" inputmode="decimal" placeholder="0"></label>
+            <label class="f">Type<select id="discType"><option value="amt">₹</option><option value="pct">%</option></select></label>
+          </div>
+          <div class="line sub-l" id="discLine" hidden><span>Discount</span><span class="num" id="discAmt"></span></div>
+          <div class="line sub-l" id="roundLine" hidden><span>Round off</span><span class="num" id="roundAmt"></span></div>
+          <div class="grand"><span>TOTAL</span><span class="num" id="grand">₹0</span></div>
+          <label class="f"><span data-label-key="cash">Cash received</span><input id="received" inputmode="decimal" placeholder="Optional"></label>
+          <div class="chips" id="cashChips"></div>
+          <div class="line"><span id="changeLbl" data-label-key="change">Change to return</span><span class="change" id="changeVal">–</span></div>
+          <div class="actions">
+            <button type="button" class="btn primary big" id="printBtn" data-label-key="print">Print bill</button>
+            <button type="button" class="btn" id="newBtn" data-label-key="new">New bill</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2 data-label-key="preview">Receipt preview</h2>
+          <div id="receiptPreview"></div>
+        </div>
+      </aside>
+    </section>
+
+    <section id="tab-items" hidden>
+      <div class="card">
+        <h2 data-label-key="itemsRates">Items &amp; rates</h2>
+        <p class="hint" style="margin:0">Saved items fill in their rate when you speak or tap them. New items from printed bills are added here automatically.</p>
+        <form id="masterForm" class="grid2" autocomplete="off" style="align-items:end">
+          <label class="f"><span data-label-key="itemName">Item name</span><input id="mName" required></label>
+          <label class="f"><span>Category</span><select id="mCategory"><option>Staples & Grains</option><option>Flours & Breakfast</option><option>Dal & Pulses</option><option>Oil, Ghee & Dairy</option><option>Spices & Masala</option><option>Fruits & Vegetables</option><option>Biscuits & Bakery</option><option>Snacks & Sweets</option><option>Cold Drinks & Water</option><option>Soaps & Personal Care</option><option>Cleaning & Laundry</option><option>Home & Kitchen</option><option>Baby & Health</option><option>Other</option></select></label>
+          <label class="f"><span data-label-key="unit">Unit</span><input id="mUnit" list="units" placeholder="kg, pc, L"></label>
+          <label class="f"><span data-label-key="rate">Rate (₹)</span><input id="mRate" inputmode="decimal" required></label>
+          <button class="btn primary" type="submit">Save item</button>
+        </form>
+        <div class="scroll"><table class="table"><thead><tr><th>Item</th><th>Category</th><th>Unit</th><th>Rate (editable)</th><th></th></tr></thead><tbody id="masterRows"></tbody></table></div>
+        <p class="empty" id="masterEmpty">No saved items yet.</p>
+      </div>
+    </section>
+
+    <section id="tab-history" hidden>
+      <div class="card">
+        <h2 data-label-key="pastBills">Past bills</h2>
+        <div class="hist" id="histList"></div>
+        <p class="empty" id="histEmpty">No bills printed yet.</p>
+      </div>
+    </section>
+
+    <section id="tab-customers" hidden>
+      <div class="card">
+        <h2>Customer register / ग्राहक नोंदणी</h2>
+        <p class="hint" style="margin:0 0 12px">Save regular customers once, then select them while billing. Credit balances are calculated from saved bills and payments.</p>
+        <form id="customerForm" class="grid2" autocomplete="off" style="align-items:end">
+          <label class="f"><span>Customer name / ग्राहकाचे नाव *</span><input id="cName" required></label>
+          <label class="f"><span>Mobile / मोबाईल</span><input id="cPhone" inputmode="tel"></label>
+          <label class="f"><span>Address / पत्ता</span><input id="cAddress"></label>
+          <label class="f"><span>Customer type / प्रकार</span><select id="cType"><option value="credit">Monthly credit / मासिक उधार</option><option value="retail">Retail / सामान्य</option></select></label>
+          <label class="f"><span>Credit limit ₹ / उधार मर्यादा</span><input id="cLimit" inputmode="decimal" placeholder="Optional"></label>
+          <label class="f"><span>Opening balance due ₹ / जुनी बाकी</span><input id="cOpening" inputmode="decimal" placeholder="Existing उधार amount"></label>
+          <label class="f"><span>Monthly due day / देय तारीख (day)</span><input id="cDueDay" type="number" min="1" max="31" placeholder="e.g. 5"></label>
+          <button class="btn primary" type="submit">Save customer / ग्राहक जतन करा</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="vrow"><h2 style="margin:0">Customers &amp; outstanding / ग्राहक व बाकी</h2><input id="customerSearch" placeholder="Search name or mobile" style="max-width:260px"></div>
+        <div class="grid2" style="margin:12px 0"><div class="card"><span class="hint">Total customers</span><div class="grand" id="customerCount">0</div></div><div class="card"><span class="hint">Total outstanding / एकूण बाकी</span><div class="grand" id="outstandingTotal">₹0</div></div></div>
+        <div class="scroll"><table class="table"><thead><tr><th>Customer</th><th>Mobile</th><th>Type</th><th>Purchased</th><th>Paid</th><th>Balance / बाकी</th><th>Actions</th></tr></thead><tbody id="customerRows"></tbody></table></div>
+        <p class="empty" id="customerEmpty">No customers saved yet.</p>
+        <div id="customerLedger" style="margin-top:16px"></div>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="stack" hidden>
+      <div class="card">
+        <h2 data-label-key="backup">Backup</h2>
+        <p class="hint" style="margin:0">Your bills and items live inside this browser. Clearing browser data, a different browser, or a different way of opening the file will not show them. Save a backup file regularly and keep it in Drive or WhatsApp.</p>
+        <div class="vrow">
+          <button type="button" class="btn primary" id="bkSave">Save backup</button>
+          <button type="button" class="btn" id="bkRestore">Restore backup</button>
+          <button type="button" class="btn" id="bkCsv">Export sales (CSV)</button>
+        </div>
+        <input type="file" id="bkFile" accept=".json,application/json" hidden>
+        <div class="vs" id="bkStatus" role="status" aria-live="polite"></div>
+      </div>
+      <div class="card">
+        <h2 data-label-key="shopSettings">Shop settings</h2>
+        <div class="grid2">
+          <label class="f"><span data-label-key="shopName">Shop name</span><input id="sShop"></label>
+          <label class="f"><span data-label-key="phone">Phone</span><input id="sPhone" inputmode="tel"></label>
+          <label class="f"><span data-label-key="address">Address</span><input id="sAddress"></label>
+          <label class="f"><span data-label-key="footer">Footer message</span><input id="sFooter"></label>
+          <label class="f">Paper<select id="sPaper"><option value="58">58 mm roll</option><option value="80">80 mm roll</option><option value="a4">A4 sheet</option></select></label>
+          <label class="f">Round total to nearest rupee<select id="sRound"><option value="1">Yes</option><option value="0">No</option></select></label>
+        </div>
+        <p class="hint" style="margin:0">Bills and items are saved in this browser on this device. There is no tax on these bills.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="printCopy" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<datalist id="masterList"></datalist>
+<datalist id="units"><option value="kg"><option value="g"><option value="L"><option value="ml"><option value="pc"><option value="pkt"><option value="dozen"><option value="box"><option value="btl"></datalist>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- Spoken list parser (pure) ---------- */
+var DEV={'०':0,'१':1,'२':2,'३':3,'४':4,'५':5,'६':6,'७':7,'८':8,'९':9};
+var WORD_NUM={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,twelve:12,half:0.5,'एक':1,'दो':2,'तीन':3,'चार':4,'पांच':5,'पाँच':5,'छह':6,'सात':7,'आठ':8,'नौ':9,'दस':10,'आधा':0.5,'डेढ़':1.5,'डेढ':1.5};
+var UNIT_MAP={kg:'kg',kgs:'kg',kilo:'kg',kilos:'kg',kilogram:'kg','किलो':'kg',g:'g',gm:'g',gms:'g',gram:'g',grams:'g','ग्राम':'g',l:'L',ltr:'L',litre:'L',liter:'L',litres:'L',liters:'L','लीटर':'L',ml:'ml',pc:'pc',pcs:'pc',piece:'pc',pieces:'pc','नग':'pc',pkt:'pkt',packet:'pkt',packets:'pkt','पैकेट':'pkt',dozen:'dozen','दर्जन':'dozen',box:'box',boxes:'box',bottle:'btl',bottles:'btl'};
+var PRICE_BEFORE=new Set(['at','rate','price','rs','rupees','rupee','inr','रेट']);
+var PRICE_AFTER=new Set(['rs','rupees','rupee','rupaye','inr','each','रुपये','रुपए','रु','रुपया']);
+var IGNORE=new Set(['at','rate','price','rs','rupees','rupee','inr','each','rupaye','रेट','रुपये','रुपए','रु','रुपया','of','a','an','the','per','के','का','की','ka','ki','ke']);
+var SEP=new Set(['next','then','and','aur','also','और','अगला','agla']);
+function has(o,k){return Object.prototype.hasOwnProperty.call(o,k);}
+function kind(w){
+  if(/^\d+(\.\d+)?$/.test(w)) return {t:'num',v:parseFloat(w)};
+  if(has(WORD_NUM,w)) return {t:'num',v:WORD_NUM[w]};
+  if(has(UNIT_MAP,w)) return {t:'unit',v:UNIT_MAP[w]};
+  if(IGNORE.has(w)) return {t:'mark'};
+  return {t:'word'};
+}
+function tokenize(seg){
+  var t=seg.toLowerCase().replace(/[०-९]/g,function(c){return DEV[c];}).replace(/₹/g,' rs ').replace(/@/g,' at ');
+  t=t.replace(/(\d)([^\d\s.])/g,'$1 $2').replace(/([^\d\s.])(\d)/g,'$1 $2');
+  return t.split(/\s+/).map(function(w){return w.replace(/^[.,]+|[.,]+$/g,'');}).filter(Boolean);
+}
+function splitGroups(tokens){
+  var groups=[],cur=[],hasName=false,nums=0,last=null;
+  tokens.forEach(function(w){
+    var k=kind(w);
+    if(SEP.has(w)){ if(cur.length) groups.push(cur); cur=[];hasName=false;nums=0;last=null;return; }
+    var startNew=false;
+    if(hasName&&nums>=1&&k.t==='word'&&(last==='num'||last==='unit'||last==='mark')) startNew=true;
+    if(hasName&&nums>=2&&k.t==='num') startNew=true;
+    if(startNew){ groups.push(cur);cur=[];hasName=false;nums=0;last=null; }
+    cur.push(w);
+    if(k.t==='word') hasName=true;
+    if(k.t==='num') nums++;
+    last=k.t;
+  });
+  if(cur.length) groups.push(cur);
+  return groups;
+}
+function findMaster(name,master){
+  var n=name.toLowerCase().trim(); if(!n) return null;
+  var best=null;
+  for(var i=0;i<master.length;i++){
+    var raw=(master[i].name||'').toLowerCase().trim(); if(!raw) continue;
+    var aliases=raw.split(/[\/|]/).map(function(x){return x.trim();}).filter(Boolean);
+    if(aliases.indexOf(n)>-1) return master[i];
+    for(var ai=0;ai<aliases.length;ai++){var mn=aliases[ai];if(n.length>=3&&mn.length>=3&&(mn.indexOf(n)>-1||n.indexOf(mn)>-1)){if(!best||Math.abs(mn.length-n.length)<Math.abs(best.name.length-n.length)) best=master[i];}}
+  }
+  return best;
+}
+function titleCase(s){return s.replace(/\b[a-z]/g,function(c){return c.toUpperCase();});}
+function parseGroup(tokens,master){
+  var nums=[],words=[],unit=null;
+  tokens.forEach(function(w,i){
+    var k=kind(w),prev=tokens[i-1],next=tokens[i+1];
+    if(k.t==='num'){
+      nums.push({v:k.v,i:i,hint:!!((prev&&PRICE_BEFORE.has(prev))||(next&&PRICE_AFTER.has(next))),unitAfter:!!(next&&kind(next).t==='unit')});
+    }else if(k.t==='unit'){
+      if(unit===null||(prev&&kind(prev).t==='num')) unit=k.v;
+    }else if(k.t==='word'){ words.push(w); }
+  });
+  var name=words.join(' ').trim();
+  if(!name&&!nums.length) return null;
+  var m=findMaster(name,master);
+  var qty=1,rate=0;
+  var priced=nums.filter(function(n){return n.hint;}),plain=nums.filter(function(n){return !n.hint;});
+  if(priced.length){ rate=priced[priced.length-1].v; if(plain.length) qty=plain[0].v; }
+  else if(plain.length>=2){ qty=plain[0].v; rate=plain[plain.length-1].v; }
+  else if(plain.length===1){
+    var n=plain[0];
+    if(m||n.i===0||n.unitAfter){ qty=n.v; rate=m?Number(m.rate)||0:0; } else { qty=1; rate=n.v; }
+  }else{ rate=m?Number(m.rate)||0:0; }
+  if(m&&!rate) rate=Number(m.rate)||0;
+  return {name:m?m.name:titleCase(name||'Item'),qty:qty,unit:unit||(m?m.unit||'':''),rate:rate};
+}
+function parseSpoken(text,master){
+  var cleaned=String(text).replace(/(\d),(\d{3})\b/g,'$1$2');
+  var out=[];
+  cleaned.split(/[\n;,|]+/).forEach(function(piece){
+    var toks=tokenize(piece); if(!toks.length) return;
+    splitGroups(toks).forEach(function(g){ var it=parseGroup(g,master||[]); if(it) out.push(it); });
+  });
+  return out;
+}
+if(typeof document==='undefined'){ globalThis.__parse=parseSpoken; return; }
+
+/* ---------- State ---------- */
+var $=function(s){return document.querySelector(s);};
+var LS='counterbill.v1';
+var DEFAULTS={shop:'Purva Traders',address:'',phone:'',footer:'Thank you! Visit again. | पुन्हा या!',paper:'80',round:true,lang:'en-IN',uiLang:'en',nextNo:1};
+var db=loadDb();
+function loadDb(){
+  try{
+    var raw=localStorage.getItem(LS);
+    if(raw){var p=JSON.parse(raw);return {settings:Object.assign({},DEFAULTS,p.settings),master:p.master||[],history:p.history||[],customers:p.customers||[],payments:p.payments||[],draft:p.draft||null,lastBackup:p.lastBackup||0};}
+  }catch(e){}
+  return {settings:Object.assign({},DEFAULTS),master:[],history:[],customers:[],payments:[],draft:null,lastBackup:0};
+}
+var storageOk=(function(){try{localStorage.setItem('__t','1');localStorage.removeItem('__t');return true;}catch(e){return false;}})();
+try{if(navigator.storage&&navigator.storage.persist) navigator.storage.persist();}catch(e){}
+function persist(){ db.draft=bill; try{localStorage.setItem(LS,JSON.stringify(db));}catch(e){} }
+function uid(){return Math.random().toString(36).slice(2,9);}
+function newBill(){return {no:null,savedAt:null,items:[],disc:'',discType:'amt',received:'',billType:'retail',customerId:''};}
+var bill=db.draft&&Array.isArray(db.draft.items)?db.draft:newBill();
+bill.items.forEach(function(i){if(!i.id)i.id=uid();});
+
+/* ---------- Starter catalogue: 100 products x 4 pack/stock options = 400 bilingual entries ---------- */
+var starterProducts=[
+['Rice','तांदूळ','kg'],['Basmati Rice','बासमती तांदूळ','kg'],['Wheat Flour','गव्हाचे पीठ','kg'],['Jowar Flour','ज्वारीचे पीठ','kg'],['Bajra Flour','बाजरीचे पीठ','kg'],['Rice Flour','तांदळाचे पीठ','kg'],['Besan','बेसन','kg'],['Rava','रवा','kg'],['Poha','पोहे','kg'],['Sabudana','साबुदाणा','kg'],['Sugar','साखर','kg'],['Jaggery','गूळ','kg'],['Salt','मीठ','pkt'],['Rock Salt','सैंधव मीठ','pkt'],['Toor Dal','तूर डाळ','kg'],['Moong Dal','मूग डाळ','kg'],['Masoor Dal','मसूर डाळ','kg'],['Chana Dal','हरभरा डाळ','kg'],['Urad Dal','उडीद डाळ','kg'],['Rajma','राजमा','kg'],['Chickpeas','काबुली चणे','kg'],['Peanuts','शेंगदाणे','kg'],['Cashews','काजू','kg'],['Almonds','बदाम','kg'],['Raisins','मनुका','kg'],['Cooking Oil','खाद्यतेल','L'],['Groundnut Oil','शेंगदाणा तेल','L'],['Sunflower Oil','सूर्यफूल तेल','L'],['Mustard Oil','मोहरीचे तेल','L'],['Ghee','तूप','L'],['Butter','लोणी','pkt'],['Milk','दूध','L'],['Curd','दही','kg'],['Paneer','पनीर','kg'],['Tea','चहा','pkt'],['Coffee','कॉफी','pkt'],['Turmeric Powder','हळद पावडर','pkt'],['Chilli Powder','तिखट','pkt'],['Coriander Powder','धणे पावडर','pkt'],['Cumin','जिरे','kg'],['Mustard Seeds','मोहरी','kg'],['Coriander Seeds','धणे','kg'],['Black Pepper','काळी मिरी','kg'],['Cardamom','वेलची','kg'],['Cloves','लवंग','kg'],['Cinnamon','दालचिनी','pkt'],['Garam Masala','गरम मसाला','pkt'],['Pav Bhaji Masala','पावभाजी मसाला','pkt'],['God Masala','गोडा मसाला','pkt'],['Tamarind','चिंच','kg'],['Dry Coconut','सुके खोबरे','pc'],['Coconut','नारळ','pc'],['Potato','बटाटा','kg'],['Onion','कांदा','kg'],['Tomato','टोमॅटो','kg'],['Garlic','लसूण','kg'],['Ginger','आले','kg'],['Green Chilli','हिरवी मिरची','kg'],['Lemon','लिंबू','pc'],['Coriander Leaves','कोथिंबीर','bunch'],['Spinach','पालक','bunch'],['Cabbage','कोबी','kg'],['Cauliflower','फुलकोबी','pc'],['Carrot','गाजर','kg'],['Cucumber','काकडी','kg'],['Brinjal','वांगी','kg'],['Okra','भेंडी','kg'],['Peas','वाटाणे','kg'],['Apple','सफरचंद','kg'],['Banana','केळी','dozen'],['Orange','संत्रे','kg'],['Grapes','द्राक्षे','kg'],['Mango','आंबा','kg'],['Papaya','पपई','pc'],['Biscuits','बिस्किटे','pkt'],['Rusk','खारी टोस्ट','pkt'],['Bread','पाव / ब्रेड','pkt'],['Noodles','नूडल्स','pkt'],['Pasta','पास्ता','pkt'],['Corn Flakes','कॉर्न फ्लेक्स','pkt'],['Oats','ओट्स','pkt'],['Jam','जॅम','jar'],['Ketchup','टोमॅटो सॉस','btl'],['Pickle','लोणचे','jar'],['Papad','पापड','pkt'],['Chivda','चिवडा','pkt'],['Namkeen','नमकीन','pkt'],['Chocolate','चॉकलेट','pc'],['Candy','गोळी','pc'],['Ice Cream','आईस्क्रीम','pc'],['Mineral Water','पिण्याचे पाणी','btl'],['Soft Drink','शीतपेय','btl'],['Dishwash Bar','भांडी घासायचा साबण','pc'],['Detergent Powder','कपडे धुण्याची पावडर','pkt'],['Bath Soap','अंघोळीचा साबण','pc'],['Shampoo','शॅम्पू','btl'],['Toothpaste','टूथपेस्ट','pc'],['Toothbrush','टूथब्रश','pc'],['Tissue Paper','टिश्यू पेपर','pkt'],['Garbage Bags','कचऱ्याच्या पिशव्या','pkt']
+]
+/* Additional everyday kirana products. Rates are indicative ₹ retail prices and are editable. */
+var extraProducts=[
+['Toor Dal','तूर डाळ','kg',145,'Dal & Pulses'],['Moong Dal','मूग डाळ','kg',120,'Dal & Pulses'],['Masoor Dal','मसूर डाळ','kg',95,'Dal & Pulses'],['Chana Dal','हरभरा डाळ','kg',85,'Dal & Pulses'],['Urad Dal','उडीद डाळ','kg',125,'Dal & Pulses'],['Matki','मटकी','kg',110,'Dal & Pulses'],['Moong Whole','मूग अख्खा','kg',105,'Dal & Pulses'],['Black Chana','काळे चणे','kg',85,'Dal & Pulses'],['White Peas','पांढरे वाटाणे','kg',80,'Dal & Pulses'],
+['Maida','मैदा','kg',42,'Flours & Breakfast'],['Besan 500g','बेसन ५०० ग्रॅम','pkt',45,'Flours & Breakfast'],['Dalia','दलिया','kg',55,'Flours & Breakfast'],['Sabudana 500g','साबुदाणा ५०० ग्रॅम','pkt',55,'Flours & Breakfast'],['Vermicelli','शेवया','pkt',25,'Flours & Breakfast'],['Idli Rava','इडली रवा','kg',55,'Flours & Breakfast'],['Thick Poha','जाड पोहे','kg',65,'Flours & Breakfast'],['Thin Poha','पातळ पोहे','kg',60,'Flours & Breakfast'],['Murmura','मुरमुरे','kg',55,'Flours & Breakfast'],['Rajgira Flour','राजगिरा पीठ','kg',110,'Flours & Breakfast'],
+['Jasmine Rice','जास्मिन तांदूळ','kg',75,'Staples & Grains'],['Kolam Rice','कोलम तांदूळ','kg',65,'Staples & Grains'],['Indrayani Rice','इंद्रायणी तांदूळ','kg',70,'Staples & Grains'],['Wheat','गहू','kg',38,'Staples & Grains'],['Jowar','ज्वारी','kg',45,'Staples & Grains'],['Bajra','बाजरी','kg',35,'Staples & Grains'],['Ragi','नाचणी','kg',55,'Staples & Grains'],['Sabudana Papad','साबुदाणा पापड','pkt',50,'Staples & Grains'],
+['Sunflower Oil 1L','सूर्यफूल तेल १ लि.','L',145,'Oil, Ghee & Dairy'],['Soybean Oil 1L','सोयाबीन तेल १ लि.','L',135,'Oil, Ghee & Dairy'],['Groundnut Oil 1L','शेंगदाणा तेल १ लि.','L',185,'Oil, Ghee & Dairy'],['Mustard Oil 1L','मोहरी तेल १ लि.','L',160,'Oil, Ghee & Dairy'],['Vanaspati 1kg','वनस्पती तूप १ किलो','kg',150,'Oil, Ghee & Dairy'],['Ghee 500ml','तूप ५०० मि.लि.','btl',300,'Oil, Ghee & Dairy'],['Cheese Slices','चीज स्लाइस','pkt',120,'Oil, Ghee & Dairy'],['Milk Powder','दुधाची पावडर','pkt',150,'Oil, Ghee & Dairy'],['Buttermilk','ताक','btl',15,'Oil, Ghee & Dairy'],
+['Cumin Powder','जिरे पूड','pkt',35,'Spices & Masala'],['Hing','हिंग','pc',30,'Spices & Masala'],['Ajwain','ओवा','kg',180,'Spices & Masala'],['Fenugreek Seeds','मेथी दाणे','kg',90,'Spices & Masala'],['Fennel Seeds','बडीशेप','kg',160,'Spices & Masala'],['Sesame Seeds','तीळ','kg',150,'Spices & Masala'],['Dry Red Chilli','सुक्या मिरच्या','kg',220,'Spices & Masala'],['Black Salt','काळे मीठ','pkt',20,'Spices & Masala'],['Chaat Masala','चाट मसाला','pkt',25,'Spices & Masala'],['Chicken Masala','चिकन मसाला','pkt',30,'Spices & Masala'],['Sambar Masala','सांबार मसाला','pkt',30,'Spices & Masala'],['Biryani Masala','बिर्याणी मसाला','pkt',35,'Spices & Masala'],
+['Bath Soap Small','अंघोळीचा साबण छोटा','pc',20,'Soaps & Personal Care'],['Bath Soap Premium','प्रीमियम साबण','pc',45,'Soaps & Personal Care'],['Laundry Soap','कपडे धुण्याचा साबण','pc',25,'Cleaning & Laundry'],['Dishwash Bar Large','भांडी साबण मोठा','pc',25,'Cleaning & Laundry'],['Dishwash Liquid 500ml','भांडी लिक्विड ५०० मि.लि.','btl',110,'Cleaning & Laundry'],['Detergent Powder 500g','डिटर्जंट पावडर ५०० ग्रॅम','pkt',45,'Cleaning & Laundry'],['Detergent Powder 1kg','डिटर्जंट पावडर १ किलो','pkt',90,'Cleaning & Laundry'],['Fabric Softener','कपडे मऊ करणारे','btl',110,'Cleaning & Laundry'],['Floor Cleaner 500ml','फ्लोअर क्लिनर ५०० मि.लि.','btl',95,'Cleaning & Laundry'],['Toilet Cleaner','टॉयलेट क्लिनर','btl',105,'Cleaning & Laundry'],['Phenyl 1L','फिनाइल १ लि.','btl',85,'Cleaning & Laundry'],['Bleaching Powder','ब्लीचिंग पावडर','pkt',30,'Cleaning & Laundry'],['Scrub Pad','स्क्रब पॅड','pc',10,'Cleaning & Laundry'],['Steel Scrubber','स्टील घासणी','pc',15,'Cleaning & Laundry'],
+['Shampoo Sachet','शॅम्पू सॅशे','pc',2,'Soaps & Personal Care'],['Shampoo 180ml','शॅम्पू १८० मि.लि.','btl',125,'Soaps & Personal Care'],['Hair Oil 100ml','केसांचे तेल १०० मि.लि.','btl',65,'Soaps & Personal Care'],['Toothpaste Small','टूथपेस्ट छोटी','pc',35,'Soaps & Personal Care'],['Toothpaste Large','टूथपेस्ट मोठी','pc',110,'Soaps & Personal Care'],['Toothbrush','टूथब्रश','pc',25,'Soaps & Personal Care'],['Face Wash','फेस वॉश','pc',100,'Soaps & Personal Care'],['Talcum Powder','टाल्कम पावडर','pc',85,'Soaps & Personal Care'],['Shaving Cream','शेव्हिंग क्रीम','pc',65,'Soaps & Personal Care'],['Sanitary Pads','सॅनिटरी पॅड्स','pkt',40,'Soaps & Personal Care'],['Cotton Buds','कॉटन बड्स','pkt',25,'Soaps & Personal Care'],['Handwash 250ml','हँडवॉश २५० मि.लि.','btl',65,'Soaps & Personal Care'],
+['Marie Biscuits','मेरी बिस्किटे','pkt',10,'Biscuits & Bakery'],['Glucose Biscuits','ग्लुकोज बिस्किटे','pkt',10,'Biscuits & Bakery'],['Cream Biscuits','क्रीम बिस्किटे','pkt',20,'Biscuits & Bakery'],['Salt Biscuits','खारी बिस्किटे','pkt',20,'Biscuits & Bakery'],['Cookies','कुकीज','pkt',35,'Biscuits & Bakery'],['Cake Slice','केक स्लाइस','pc',20,'Biscuits & Bakery'],['Pav','पाव','pkt',30,'Biscuits & Bakery'],['Bun','बन','pc',10,'Biscuits & Bakery'],['Khari','खारी','pkt',35,'Biscuits & Bakery'],['Toast','टोस्ट','pkt',30,'Biscuits & Bakery'],
+['Potato Chips Small','बटाटा चिप्स छोटे','pkt',10,'Snacks & Sweets'],['Potato Chips Large','बटाटा चिप्स मोठे','pkt',30,'Snacks & Sweets'],['Bhujia','भुजिया','pkt',20,'Snacks & Sweets'],['Sev','शेव','kg',180,'Snacks & Sweets'],['Chakli','चकली','pkt',50,'Snacks & Sweets'],['Chakli Loose','चकली सुटी','kg',300,'Snacks & Sweets'],['Shankarpali','शंकरपाळे','kg',220,'Snacks & Sweets'],['Ladoo','लाडू','pc',20,'Snacks & Sweets'],['Gulab Jamun Tin','गुलाबजाम डबा','tin',140,'Snacks & Sweets'],['Jelly','जेली','pc',5,'Snacks & Sweets'],['Chewing Gum','च्युइंग गम','pc',2,'Snacks & Sweets'],['Peanut Chikki','शेंगदाणा चिक्की','pc',10,'Snacks & Sweets'],
+['Cola 250ml','कोला २५० मि.लि.','btl',20,'Cold Drinks & Water'],['Cola 750ml','कोला ७५० मि.लि.','btl',40,'Cold Drinks & Water'],['Lemon Drink','लिंबू शीतपेय','btl',20,'Cold Drinks & Water'],['Soda Bottle','सोडा बाटली','btl',20,'Cold Drinks & Water'],['Packaged Water 500ml','पाणी ५०० मि.लि.','btl',10,'Cold Drinks & Water'],['Packaged Water 1L','पाणी १ लि.','btl',20,'Cold Drinks & Water'],['Fruit Juice','फळांचा रस','btl',30,'Cold Drinks & Water'],
+['Matchbox','काडेपेटी','pc',2,'Home & Kitchen'],['Candles','मेणबत्त्या','pkt',15,'Home & Kitchen'],['Aluminium Foil','अॅल्युमिनियम फॉइल','roll',60,'Home & Kitchen'],['Cling Film','क्लिंग फिल्म','roll',80,'Home & Kitchen'],['Paper Plates','कागदी प्लेट्स','pkt',35,'Home & Kitchen'],['Paper Cups','कागदी कप','pkt',30,'Home & Kitchen'],['Zip Bags','झिप पिशव्या','pkt',40,'Home & Kitchen'],['Mosquito Coil','डास कॉइल','pkt',35,'Home & Kitchen'],['Mosquito Liquid Refill','डास लिक्विड रिफिल','pc',75,'Home & Kitchen'],['Battery AA Pair','AA बॅटरी जोडी','pair',35,'Home & Kitchen'],['Incense Sticks','अगरबत्ती','pkt',25,'Home & Kitchen'],['Camphor','कापूर','pkt',30,'Home & Kitchen'],
+['Baby Soap','बेबी साबण','pc',55,'Baby & Health'],['Baby Powder','बेबी पावडर','pc',110,'Baby & Health'],['Baby Wipes','बेबी वाइप्स','pkt',70,'Baby & Health'],['Diapers Small Pack','डायपर छोटा पॅक','pkt',120,'Baby & Health'],['Bandage','बँडेज','pc',15,'Baby & Health'],['Cotton Roll','कापूस रोल','pc',35,'Baby & Health'],['ORS Sachet','ORS सॅशे','pc',20,'Baby & Health'],
+['Notebook','वही','pc',25,'Other'],['Pen','पेन','pc',10,'Other'],['Pencil','पेन्सिल','pc',5,'Other'],['Plastic Carry Bag','प्लास्टिक पिशवी','pc',2,'Other']
+];
+function inferCategory(name){
+ var n=String(name||'').toLowerCase();
+ if(/soap|shampoo|tooth|hair oil|face wash|talcum|shaving|sanitary|handwash|cotton bud/.test(n))return 'Soaps & Personal Care';
+ if(/detergent|dishwash|floor cleaner|toilet cleaner|phenyl|bleach|scrub|scrubber|laundry/.test(n))return 'Cleaning & Laundry';
+ if(/biscuit|cookie|bread|pav|bun|rusk|toast|khari|cake/.test(n))return 'Biscuits & Bakery';
+ if(/chips|namkeen|sev|bhujia|chivda|chakli|shankarpali|ladoo|chikki|chocolate|candy|gum/.test(n))return 'Snacks & Sweets';
+ if(/oil|ghee|butter|milk|curd|paneer|cheese|buttermilk/.test(n))return 'Oil, Ghee & Dairy';
+ if(/masala|powder|turmeric|chilli|cumin|mustard seed|pepper|cardamom|clove|cinnamon|hing|ajwain|fennel/.test(n))return 'Spices & Masala';
+ if(/fruit|apple|banana|orange|grape|mango|papaya|potato|onion|tomato|garlic|ginger|chilli|lemon|spinach|cabbage|cauliflower|carrot|cucumber|brinjal|okra|peas/.test(n))return 'Fruits & Vegetables';
+ if(/dal|beans|chickpea|rajma|matki|moong|masoor|urad|peanut|chana/.test(n))return 'Dal & Pulses';
+ if(/flour|rava|poha|sabudana|oats|corn flakes|vermicelli|maida|dalia|murmura|ragi/.test(n))return 'Flours & Breakfast';
+ if(/rice|wheat|jowar|bajra|grain|sugar|jaggery|salt/.test(n))return 'Staples & Grains';
+ if(/water|drink|cola|soda|juice/.test(n))return 'Cold Drinks & Water';
+ return 'Other';
+}
+function seedCatalogue(){
+ if(!db.master.length){
+  var packs=[['Loose','सुटे'],['500 g pack','५०० ग्रॅम पॅक'],['1 kg pack','१ किलो पॅक'],['Family pack','फॅमिली पॅक']];
+  starterProducts.forEach(function(p){packs.forEach(function(pk,idx){db.master.push({name:p[0]+' / '+p[1]+' — '+pk[0]+' / '+pk[1],unit:p[2],rate:0,n:0,category:inferCategory(p[0])});});});
+ }
+ var changed=false;
+ extraProducts.forEach(function(p){var found=db.master.find(function(m){return m.name.toLowerCase()===p[0].toLowerCase();});if(!found){db.master.push({name:p[0],unit:p[2],rate:p[3],n:0,category:p[4],standardRate:true});changed=true;} });
+ var baseRates={'rice':60,'basmati rice':110,'wheat flour':42,'jowar flour':55,'bajra flour':42,'rice flour':48,'besan':90,'rava':55,'poha':60,'sabudana':100,'sugar':45,'jaggery':60,'salt':25,'rock salt':35,'toor dal':145,'moong dal':120,'masoor dal':95,'chana dal':85,'urad dal':125,'rajma':130,'chickpeas':95,'peanuts':120,'cashews':850,'almonds':750,'raisins':300,'cooking oil':150,'groundnut oil':185,'sunflower oil':145,'mustard oil':160,'ghee':600,'butter':60,'milk':60,'curd':80,'paneer':350,'tea':300,'coffee':450,'turmeric powder':40,'chilli powder':55,'coriander powder':45,'cumin':350,'mustard seeds':100,'coriander seeds':130,'black pepper':700,'cardamom':1800,'cloves':900,'cinnamon':350,'garam masala':55,'pav bhaji masala':35,'god masala':45,'tamarind':150,'dry coconut':40,'coconut':35,'potato':35,'onion':40,'tomato':35,'garlic':120,'ginger':100,'green chilli':80,'lemon':8,'spinach':20,'cabbage':35,'cauliflower':40,'carrot':50,'cucumber':35,'brinjal':40,'okra':60,'peas':80,'apple':180,'banana':60,'orange':100,'grapes':100,'mango':100,'papaya':50,'biscuits':10,'rusk':35,'bread':35,'noodles':15,'pasta':80,'corn flakes':150,'oats':120,'jam':120,'ketchup':100,'pickle':120,'papad':80,'chivda':180,'namkeen':200,'chocolate':20,'candy':2,'ice cream':30,'mineral water':20,'soft drink':40,'dishwash bar':10,'detergent powder':90,'bath soap':35,'shampoo':120,'toothpaste':90,'toothbrush':25,'tissue paper':50,'garbage bags':60};
+ db.master.forEach(function(m){
+  if(!m.category){m.category=inferCategory(m.name);changed=true;}
+  if(!(Number(m.rate)>0)){
+   var nm=String(m.name||'').toLowerCase(),base=0;
+   Object.keys(baseRates).some(function(k){if(nm.indexOf(k)===0){base=baseRates[k];return true;}return false;});
+   if(base){if(/500 g|500g|500 ml|500ml/.test(nm))base=base*0.55;else if(/family pack/.test(nm))base=base*1.8;else if(/loose/.test(nm)&&/kg/.test(m.unit||''))base=base; m.rate=Math.round(base*100)/100;changed=true;}
+  }
+ });
+ if(changed){try{localStorage.setItem(LS,JSON.stringify(db));}catch(e){}}
+}
+seedCatalogue();
+function setUiLanguage(lang){
+ db.settings.uiLang=lang;document.documentElement.lang=lang==='mr'?'mr':'en';
+ $('#uiEnglish').classList.toggle('active',lang!=='mr');$('#uiMarathi').classList.toggle('active',lang==='mr');
+ document.querySelectorAll('[data-en][data-mr]').forEach(function(el){el.textContent=lang==='mr'?el.dataset.mr:el.dataset.en;});
+ var labels={en:{'micLabel':'Tap and speak your list','voiceAdd':'Add to bill','billItems':'Bill items','add':'Add','quick':'Quick add','subtotal':'Subtotal','discount':'Discount','cash':'Cash received','change':'Change to return','print':'Print bill','new':'New bill','preview':'Receipt preview','itemsRates':'Items & rates','pastBills':'Past bills','backup':'Backup','shopSettings':'Shop settings','saveBackup':'Save backup','restoreBackup':'Restore backup','exportCsv':'Export sales (CSV)','itemName':'Item name','unit':'Unit','rate':'Rate (₹)','saveItem':'Save item','shopName':'Shop name','phone':'Phone','address':'Address','footer':'Footer message','paper':'Paper','round':'Round total to nearest rupee'},mr:{'micLabel':'बोला आणि यादी जोडा','voiceAdd':'बिलात जोडा','billItems':'बिलातील वस्तू','add':'जोडा','quick':'जलद जोडा','subtotal':'एकूण बेरीज','discount':'सवलत','cash':'मिळालेली रक्कम','change':'परत द्यायची रक्कम','print':'बिल छापा','new':'नवीन बिल','preview':'बिलाची पावती','itemsRates':'वस्तू आणि दर','pastBills':'मागील बिले','backup':'बॅकअप','shopSettings':'दुकान सेटिंग्ज','saveBackup':'बॅकअप जतन करा','restoreBackup':'बॅकअप पुनर्संचयित करा','exportCsv':'विक्री CSV निर्यात','itemName':'वस्तूचे नाव','unit':'एकक','rate':'दर (₹)','saveItem':'वस्तू जतन करा','shopName':'दुकानाचे नाव','phone':'फोन','address':'पत्ता','footer':'पावतीवरील संदेश','paper':'कागद','round':'एकूण रक्कम जवळच्या रुपयात पूर्ण करा'}};
+ var map=labels[lang==='mr'?'mr':'en'];Object.keys(map).forEach(function(k){var el=document.querySelector('[data-label-key="'+k+'"]');if(el)el.textContent=map[k];});
+ try{localStorage.setItem(LS,JSON.stringify(db));}catch(e){}
+}
+
+/* ---------- Helpers ---------- */
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+var num=function(v){var n=parseFloat(String(v).replace(/,/g,''));return isFinite(n)?n:0;};
+var r2=function(x){return Math.round((x+Number.EPSILON)*100)/100;};
+var nf=new Intl.NumberFormat('en-IN',{minimumFractionDigits:0,maximumFractionDigits:2});
+var nf2=new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+var inr=function(n){return '₹'+nf.format(n);};
+var amt=function(it){return r2(num(it.qty)*num(it.rate));};
+var pad=function(n){return String(n).padStart(4,'0');};
+function fmtDate(ts){return new Date(ts).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true});}
+function sameDay(a,b){var x=new Date(a),y=new Date(b);return x.toDateString()===y.toDateString();}
+var toastTimer;
+function toast(msg){var t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('on');},2800);}
+
+function calc(){
+  var sub=r2(bill.items.reduce(function(s,it){return s+amt(it);},0));
+  var d=num(bill.disc);
+  var disc=bill.discType==='pct'?sub*Math.min(d,100)/100:Math.min(d,sub);
+  disc=r2(disc);
+  var net=r2(sub-disc);
+  var total=db.settings.round?Math.round(net):net;
+  var rec=String(bill.received).trim()===''?null:num(bill.received);
+  return {sub:sub,disc:disc,net:net,total:total,roundoff:r2(total-net),rec:rec,change:rec==null?null:r2(rec-total)};
+}
+
+/* ---------- Items on the bill ---------- */
+function addItems(list){
+  list.forEach(function(n){
+    var ex=bill.items.find(function(i){return i.name.toLowerCase()===n.name.toLowerCase()&&i.unit===n.unit&&num(i.rate)===num(n.rate);});
+    if(ex) ex.qty=r2(num(ex.qty)+num(n.qty));
+    else bill.items.push({id:uid(),name:n.name,qty:n.qty,unit:n.unit||'',rate:n.rate||0});
+  });
+  renderRows();
+}
+function renderRows(){
+  var box=$('#rows');
+  if(!bill.items.length){
+    box.innerHTML='<p class="empty">No items yet. Speak your list, tap an item below, or add one above.</p>';
+  }else{
+    box.innerHTML=bill.items.map(function(it){
+      return '<div class="row" data-id="'+it.id+'">'+
+        '<input class="f-name" data-k="name" value="'+esc(it.name)+'" aria-label="Item name" placeholder="Item">'+
+        '<input class="f-qty" data-k="qty" inputmode="decimal" value="'+esc(it.qty)+'" aria-label="Quantity" placeholder="Qty">'+
+        '<input class="f-unit" data-k="unit" value="'+esc(it.unit)+'" aria-label="Unit" placeholder="Unit" list="units">'+
+        '<input class="f-rate'+(num(it.rate)>0?'':' warn')+'" data-k="rate" inputmode="decimal" value="'+(num(it.rate)>0?esc(it.rate):'')+'" aria-label="Rate" placeholder="Rate">'+
+        '<output class="f-amt">'+nf.format(amt(it))+'</output>'+
+        '<button type="button" class="icon" data-del aria-label="Remove item">×</button></div>';
+    }).join('');
+  }
+  totals();
+}
+$('#rows').addEventListener('input',function(e){
+  var row=e.target.closest('.row'); if(!row||!e.target.dataset.k) return;
+  var it=bill.items.find(function(i){return i.id===row.dataset.id;}); if(!it) return;
+  var k=e.target.dataset.k;
+  it[k]=e.target.value;
+  if(k==='rate') e.target.classList.toggle('warn',!(num(e.target.value)>0));
+  row.querySelector('.f-amt').textContent=nf.format(amt(it));
+  totals();
+});
+$('#rows').addEventListener('click',function(e){
+  var b=e.target.closest('[data-del]'); if(!b) return;
+  var id=b.closest('.row').dataset.id;
+  bill.items=bill.items.filter(function(i){return i.id!==id;});
+  renderRows();
+});
+
+/* ---------- Add form ---------- */
+var addName=$('#addName'),addQty=$('#addQty'),addUnit=$('#addUnit'),addRate=$('#addRate');
+addName.addEventListener('change',function(){
+  var m=findMaster(addName.value,db.master);
+  if(m&&m.name.toLowerCase()===addName.value.trim().toLowerCase()){addUnit.value=m.unit||'';addRate.value=m.rate||'';addQty.focus();addQty.select();}
+});
+$('#addForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  var name=addName.value.trim(); if(!name){addName.focus();return;}
+  var m=findMaster(name,db.master);
+  var exact=m&&m.name.toLowerCase()===name.toLowerCase();
+  addItems([{name:exact?m.name:name,qty:num(addQty.value)||1,unit:addUnit.value.trim()||(exact?m.unit||'':''),rate:num(addRate.value)||(exact?Number(m.rate)||0:0)}]);
+  addName.value='';addQty.value='1';addUnit.value='';addRate.value='';addName.focus();
+});
+
+/* ---------- Totals, cash, receipt ---------- */
+function cashOptions(total){
+  var set={},out=[];
+  if(total>0){set[total]=1;var up=Math.ceil(total/100)*100;set[up]=1;[50,100,200,500,2000].forEach(function(n){if(n>=total)set[n]=1;});}
+  Object.keys(set).map(Number).sort(function(a,b){return a-b;}).forEach(function(n){out.push(n);});
+  return out.slice(0,4);
+}
+function totals(){
+  var c=calc();
+  $('#subtotal').textContent=inr(c.sub);
+  $('#discLine').hidden=!(c.disc>0);$('#discAmt').textContent='− '+inr(c.disc);
+  $('#roundLine').hidden=!(c.roundoff!==0);$('#roundAmt').textContent=(c.roundoff>0?'+ ':'− ')+inr(Math.abs(c.roundoff));
+  $('#grand').textContent=inr(c.total);
+  var cv=$('#changeVal'),cl=$('#changeLbl');
+  if(c.change==null){cl.textContent='Change to return';cv.textContent='–';cv.className='change';}
+  else if(c.change>=0){cl.textContent='Change to return';cv.textContent=inr(c.change);cv.className='change ok';}
+  else{cl.textContent='Balance due';cv.textContent=inr(Math.abs(c.change));cv.className='change due';}
+  $('#cashChips').innerHTML=cashOptions(c.total).map(function(n){return '<button type="button" class="chip" data-cash="'+n+'">'+(n===c.total?'Exact':'')+'<small>'+inr(n)+'</small></button>';}).join('');
+  $('#printBtn').disabled=!bill.items.length;
+  var no=bill.no!=null?bill.no:db.settings.nextNo;
+  $('#billNoLbl').textContent='Bill no. '+pad(no)+(bill.no!=null?' · printed':'');
+  renderReceipt(c,no);
+  persist();
+}
+$('#cashChips').addEventListener('click',function(e){
+  var b=e.target.closest('[data-cash]'); if(!b) return;
+  bill.received=b.dataset.cash;$('#received').value=bill.received;totals();
+});
+$('#received').addEventListener('input',function(e){bill.received=e.target.value;totals();});
+$('#disc').addEventListener('input',function(e){bill.disc=e.target.value;totals();});
+$('#discType').addEventListener('change',function(e){bill.discType=e.target.value;totals();});
+
+function customerReceiptLine(id){var x=db.customers.find(function(c){return c.id===id;});return x?'<div class="meta">Customer: '+esc(x.name)+(x.phone?' · '+esc(x.phone):'')+'</div>':'';}
+function receiptHTML(c,no){
+  var s=db.settings,when=bill.savedAt||Date.now();
+  var lines=bill.items.filter(function(it){return it.name||amt(it)>0;});
+  var items=lines.map(function(it){
+    var q=String(num(it.qty))+(it.unit?' '+esc(it.unit):'');
+    return '<div class="ri"><div class="rn">'+esc(it.name||'Item')+'</div><div class="r2"><span>'+q+' x '+nf2.format(num(it.rate))+'</span><span>'+nf2.format(amt(it))+'</span></div></div>';
+  }).join('');
+  var h='<div class="receipt paper-'+s.paper+'">'+
+    '<div class="c shop">'+esc(s.shop)+'</div>'+
+    (s.address?'<div class="c meta">'+esc(s.address)+'</div>':'')+
+    (s.phone?'<div class="c meta">Ph: '+esc(s.phone)+'</div>':'')+
+    '<div class="dash"></div>'+
+    '<div class="r2 meta"><span>Bill no. '+pad(no)+'</span><span>'+esc(fmtDate(when))+'</span></div>'+
+    '<div class="dash"></div>'+
+    (bill.customerId?customerReceiptLine(bill.customerId):'')+
+    (items||'<div class="c meta">No items</div>')+
+    '<div class="dash"></div>';
+  if(c.disc>0||c.roundoff!==0){
+    h+='<div class="r2"><span data-label-key="subtotal">Subtotal</span><span>'+nf2.format(c.sub)+'</span></div>';
+    if(c.disc>0) h+='<div class="r2"><span>Discount</span><span>- '+nf2.format(c.disc)+'</span></div>';
+    if(c.roundoff!==0) h+='<div class="r2"><span>Round off</span><span>'+(c.roundoff>0?'+ ':'- ')+nf2.format(Math.abs(c.roundoff))+'</span></div>';
+  }
+  h+='<div class="r2 tot"><span>TOTAL</span><span>₹'+nf2.format(c.total)+'</span></div>';
+  h+='<div class="r2 meta"><span>Items: '+lines.length+'</span></div>';
+  if(c.rec!=null){
+    h+='<div class="r2"><span>Received</span><span>'+nf2.format(c.rec)+'</span></div>';
+    h+='<div class="r2"><span>'+(c.change>=0?'Change':'Balance due')+'</span><span>'+nf2.format(Math.abs(c.change))+'</span></div>';
+  }
+  h+='<div class="dash"></div>'+(s.footer?'<div class="c">'+esc(s.footer)+'</div>':'')+'</div>';
+  return h;
+}
+function renderReceipt(c,no){
+  var h=receiptHTML(c,no);
+  $('#receiptPreview').innerHTML=h;$('#printCopy').innerHTML=h;
+  $('#pageStyle').textContent=db.settings.paper==='a4'?'@page{size:A4;margin:12mm}':'@page{margin:0}';
+}
+
+/* ---------- Quick-add chips and datalist ---------- */
+function renderChips(){
+  var top=db.master.slice().sort(function(a,b){return (b.n||0)-(a.n||0)||a.name.localeCompare(b.name);}).slice(0,14);
+  $('#chips').innerHTML=top.map(function(m){return '<button type="button" class="chip" data-i="'+db.master.indexOf(m)+'">'+esc(m.name)+'<small>'+nf.format(Number(m.rate)||0)+'</small></button>';}).join('');
+  $('#chipsHint').hidden=!top.length;
+  $('#masterList').innerHTML=db.master.map(function(m){return '<option value="'+esc(m.name)+'">';}).join('');
+}
+$('#chips').addEventListener('click',function(e){
+  var b=e.target.closest('[data-i]'); if(!b) return;
+  var m=db.master[Number(b.dataset.i)]; if(!m) return;
+  addItems([{name:m.name,qty:1,unit:m.unit||'',rate:Number(m.rate)||0}]);
+});
+
+/* ---------- Save / print / new ---------- */
+function saveBill(){
+  var clean=bill.items.filter(function(it){return String(it.name).trim()||amt(it)>0;});
+  if(!clean.length){toast('Add at least one item first.');return false;}
+  if(clean.length!==bill.items.length){bill.items=clean;renderRows();}
+  if(bill.no==null){bill.no=db.settings.nextNo;db.settings.nextNo=bill.no+1;bill.savedAt=Date.now();}
+  var c=calc();
+  var paid=Math.min(c.total,Math.max(0,num(bill.received)));
+  if(bill.billType!=='credit') paid=c.total;
+  if(bill.billType==='credit'&&!bill.customerId){toast('Select a registered customer for a credit bill.');return false;}
+  var entry={no:bill.no,at:bill.savedAt,items:bill.items.map(function(i){return {name:i.name,qty:i.qty,unit:i.unit,rate:i.rate};}),disc:bill.disc,discType:bill.discType,received:String(paid),total:c.total,count:bill.items.length,billType:bill.billType||'retail',customerId:bill.customerId||'',customerName:(db.customers.find(function(x){return x.id===bill.customerId;})||{}).name||''};
+  var idx=db.history.findIndex(function(h){return h.no===bill.no;});
+  if(idx>-1) db.history[idx]=entry; else db.history.unshift(entry);
+  bill.items.forEach(function(it){
+    var name=String(it.name).trim(); if(!name) return;
+    var ex=db.master.find(function(m){return m.name.toLowerCase()===name.toLowerCase();});
+    if(ex) ex.n=(ex.n||0)+1;
+    else if(num(it.rate)>0) db.master.unshift({name:name,unit:it.unit||'',rate:num(it.rate),n:1});
+  });
+  persist();renderChips();renderHistory();renderMaster();renderCustomers();renderNotice();totals();return true;
+}
+$('#printBtn').addEventListener('click',function(){
+  if(!saveBill()) return;
+  setTimeout(function(){window.print();},60);
+});
+var armed=false,armTimer;
+$('#newBtn').addEventListener('click',function(){
+  var btn=this,dirty=bill.no==null&&bill.items.some(function(i){return i.name||num(i.rate)>0;});
+  if(dirty&&!armed){armed=true;btn.textContent='Discard this bill?';clearTimeout(armTimer);armTimer=setTimeout(function(){armed=false;btn.textContent='New bill';},4000);return;}
+  armed=false;clearTimeout(armTimer);btn.textContent='New bill';
+  bill=newBill();$('#disc').value='';$('#discType').value='amt';$('#received').value='';$('#billType').value='retail';$('#billCustomer').value='';updateBillCustomerUi();
+  renderRows();
+});
+
+/* ---------- Past bills ---------- */
+function renderHistory(){
+  var list=db.history.slice().sort(function(a,b){return b.no-a.no;}).slice(0,100);
+  $('#histEmpty').hidden=list.length>0;
+  $('#histList').innerHTML=list.map(function(h){
+    return '<div class="h"><div class="info"><b>#'+pad(h.no)+'</b> <span class="hint">'+esc(fmtDate(h.at))+' · '+h.count+' item'+(h.count===1?'':'s')+'</span></div><span class="tot">'+inr(h.total)+'</span><button type="button" class="btn" data-open="'+h.no+'">Open</button></div>';
+  }).join('');
+  var today=db.history.filter(function(h){return sameDay(h.at,Date.now());});
+  var sum=today.reduce(function(s,h){return s+h.total;},0);
+  $('#todayChip').innerHTML='Today <b>'+inr(sum)+'</b> · '+today.length+' bill'+(today.length===1?'':'s');
+}
+$('#histList').addEventListener('click',function(e){
+  var b=e.target.closest('[data-open]'); if(!b) return;
+  var h=db.history.find(function(x){return x.no===Number(b.dataset.open);}); if(!h) return;
+  var dirty=bill.no==null&&bill.items.some(function(i){return i.name||num(i.rate)>0;});
+  if(dirty){toast('Print or clear the current bill first.');return;}
+  bill={no:h.no,savedAt:h.at,items:h.items.map(function(i){return {id:uid(),name:i.name,qty:i.qty,unit:i.unit,rate:i.rate};}),disc:h.disc||'',discType:h.discType||'amt',received:h.received||'',billType:h.billType||'retail',customerId:h.customerId||''};
+  $('#disc').value=bill.disc;$('#discType').value=bill.discType;$('#received').value=bill.received;$('#billType').value=bill.billType;renderBillCustomerOptions();$('#billCustomer').value=bill.customerId;updateBillCustomerUi();
+  showTab('bill');renderRows();toast('Bill opened. Press Print bill to print it again.');
+});
+
+/* ---------- Items & rates tab ---------- */
+function renderMaster(){
+  $('#masterEmpty').hidden=db.master.length>0;
+  $('#masterRows').innerHTML=db.master.map(function(m,i){
+    return '<tr data-i="'+i+'"><td><input data-k="name" value="'+esc(m.name)+'" aria-label="Item name" style="min-width:150px"></td><td><input data-k="category" value="'+esc(m.category||'Other')+'" aria-label="Category" style="min-width:125px"></td><td><input data-k="unit" value="'+esc(m.unit||'')+'" list="units" aria-label="Unit" style="min-width:70px"></td><td><input data-k="rate" inputmode="decimal" value="'+esc(m.rate)+'" aria-label="Rate" style="min-width:80px"></td><td><button type="button" class="icon" data-mdel aria-label="Delete item">×</button></td></tr>';
+  }).join('');
+}
+$('#masterRows').addEventListener('change',function(e){
+  var tr=e.target.closest('tr'); if(!tr||!e.target.dataset.k) return;
+  var m=db.master[Number(tr.dataset.i)]; if(!m) return;
+  m[e.target.dataset.k]=e.target.dataset.k==='rate'?num(e.target.value):e.target.value.trim();
+  persist();renderChips();
+});
+$('#masterRows').addEventListener('click',function(e){
+  var b=e.target.closest('[data-mdel]'); if(!b) return;
+  db.master.splice(Number(b.closest('tr').dataset.i),1);persist();renderMaster();renderChips();
+});
+$('#masterForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  var name=$('#mName').value.trim(),rate=num($('#mRate').value); if(!name) return;
+  var ex=db.master.find(function(m){return m.name.toLowerCase()===name.toLowerCase();});
+  if(ex){ex.rate=rate;ex.unit=$('#mUnit').value.trim();ex.category=$('#mCategory').value;}
+  else db.master.unshift({name:name,unit:$('#mUnit').value.trim(),rate:rate,n:0,category:$('#mCategory').value});
+  e.target.reset();persist();renderMaster();renderChips();toast('Item saved.');
+});
+
+/* ---------- Customers, credit ledger and payment collection ---------- */
+function getCustomer(id){return db.customers.find(function(c){return c.id===id;});}
+function customerStats(c){
+  var bills=db.history.filter(function(h){return h.customerId===c.id;});
+  var purchased=num(c.openingBalance)+bills.reduce(function(s,h){return s+num(h.total);},0);
+  var billPaid=bills.reduce(function(s,h){return s+Math.min(num(h.total),Math.max(0,num(h.received)));},0);
+  var receipts=db.payments.filter(function(p){return p.customerId===c.id;});
+  var extra=receipts.reduce(function(s,p){return s+num(p.amount);},0);
+  var due=Math.max(0,purchased-billPaid-extra);
+  return {bills:bills,purchased:purchased,paid:billPaid+extra,due:due,receipts:receipts};
+}
+function renderBillCustomerOptions(){
+  var el=$('#billCustomer'),current=el.value||bill.customerId||'';
+  el.innerHTML='<option value="">Walk-in / सामान्य ग्राहक</option>'+db.customers.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(c){return '<option value="'+esc(c.id)+'">'+esc(c.name)+(c.phone?' · '+esc(c.phone):'')+'</option>';}).join('');
+  if(getCustomer(current))el.value=current;
+}
+function updateBillCustomerUi(){
+  var type=$('#billType').value;
+  $('#creditHint').textContent=type==='credit'?'Credit bill: select a registered customer. Amount received may be ₹0 for full उधार.':'Retail bill: payment is treated as received in full. Customer details are optional.';
+  $('#billCustomer').required=type==='credit';
+  if(type==='credit'&&!$('#billCustomer').value) $('#billCustomer').focus();
+  bill.billType=type;bill.customerId=$('#billCustomer').value||'';
+  if(type==='credit'&&bill.customerId&&String(bill.received)==='') bill.received='0';
+  $('#received').placeholder=type==='credit'?'Amount paid now (₹)':'Cash/UPI received (₹)';
+  persist();totals();
+}
+$('#billType').addEventListener('change',updateBillCustomerUi);
+$('#billCustomer').addEventListener('change',function(){bill.customerId=this.value||'';if(bill.billType==='credit'&&String(bill.received)==='')bill.received='0';$('#received').value=bill.received;persist();totals();});
+function renderCustomers(){
+  renderBillCustomerOptions();
+  var q=($('#customerSearch')&&$('#customerSearch').value||'').trim().toLowerCase();
+  var all=db.customers.slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+  $('#customerCount').textContent=all.length;
+  $('#outstandingTotal').textContent=inr(all.reduce(function(s,c){return s+customerStats(c).due;},0));
+  var shown=all.filter(function(c){return !q||c.name.toLowerCase().includes(q)||String(c.phone||'').toLowerCase().includes(q);});
+  $('#customerEmpty').hidden=shown.length>0;
+  $('#customerRows').innerHTML=shown.map(function(c){var st=customerStats(c);return '<tr data-customer="'+esc(c.id)+'"><td><b>'+esc(c.name)+'</b><br><small>'+esc(c.address||'')+'</small></td><td>'+esc(c.phone||'—')+'</td><td>'+((c.type==='credit')?'Monthly credit':'Retail')+'</td><td>'+inr(st.purchased)+'</td><td>'+inr(st.paid)+'</td><td><b>'+inr(st.due)+'</b></td><td><button type="button" class="btn" data-ledger="'+esc(c.id)+'">Ledger</button> <button type="button" class="btn" data-pay="'+esc(c.id)+'">Receive payment</button> <button type="button" class="btn" data-editcust="'+esc(c.id)+'">Edit</button></td></tr>';}).join('');
+}
+$('#customerSearch').addEventListener('input',renderCustomers);
+$('#customerForm').addEventListener('submit',function(e){
+  e.preventDefault();var name=$('#cName').value.trim();if(!name)return;
+  var phone=$('#cPhone').value.trim();var existing=phone?db.customers.find(function(c){return c.phone===phone;}):null;
+  var c=existing||{id:'C-'+Date.now().toString(36).toUpperCase(),createdAt:Date.now()};
+  c.name=name;c.phone=phone;c.address=$('#cAddress').value.trim();c.type=$('#cType').value;c.creditLimit=num($('#cLimit').value);c.openingBalance=num($('#cOpening').value);c.dueDay=$('#cDueDay').value?Number($('#cDueDay').value):'';
+  if(!existing)db.customers.push(c);persist();e.target.reset();renderCustomers();toast(existing?'Customer updated.':'Customer saved.');
+});
+$('#customerRows').addEventListener('click',function(e){
+  var b=e.target.closest('button');if(!b)return;var id=b.dataset.ledger||b.dataset.pay||b.dataset.editcust,c=getCustomer(id);if(!c)return;
+  if(b.dataset.editcust){$('#cName').value=c.name;$('#cPhone').value=c.phone||'';$('#cAddress').value=c.address||'';$('#cType').value=c.type||'credit';$('#cLimit').value=c.creditLimit||'';$('#cOpening').value=c.openingBalance||'';$('#cDueDay').value=c.dueDay||'';window.scrollTo(0,0);return;}
+  if(b.dataset.pay){var st=customerStats(c);if(st.due<=0){toast('No outstanding balance for this customer.');return;}var raw=prompt('Receive payment from '+c.name+'\nOutstanding: '+inr(st.due)+'\nEnter amount received (₹):',''+st.due);if(raw===null)return;var amount=num(raw);if(amount<=0){toast('Enter a payment greater than zero.');return;}db.payments.push({id:uid(),customerId:id,amount:Math.min(amount,st.due),at:Date.now(),method:prompt('Payment method: Cash / UPI / Bank','Cash')||'Cash'});persist();renderCustomers();renderCustomerLedger(id);toast('Payment recorded.');return;}
+  renderCustomerLedger(id);
+});
+function renderCustomerLedger(id){
+  var c=getCustomer(id);if(!c)return;var st=customerStats(c);
+  var rows=[];
+  if(num(c.openingBalance)>0) rows.push({at:c.createdAt||Date.now(),type:'Opening balance',debit:num(c.openingBalance),credit:0,note:'Previous outstanding'});
+  st.bills.forEach(function(h){rows.push({at:h.at,type:'Bill #'+pad(h.no),debit:num(h.total),credit:Math.min(num(h.total),Math.max(0,num(h.received))),note:h.billType==='credit'?'Credit sale':'Retail'});});
+  st.receipts.forEach(function(p){rows.push({at:p.at,type:'Payment received',debit:0,credit:num(p.amount),note:p.method||'Cash'});});
+  rows.sort(function(a,b){return a.at-b.at;});var running=0;
+  var body=rows.map(function(r){running+=r.debit-r.credit;return '<tr><td>'+esc(fmtDate(r.at))+'</td><td>'+esc(r.type)+'<br><small>'+esc(r.note)+'</small></td><td>'+inr(r.debit)+'</td><td>'+inr(r.credit)+'</td><td>'+inr(Math.max(0,running))+'</td></tr>';}).join('');
+  $('#customerLedger').innerHTML='<h3>Ledger / खातेवही — '+esc(c.name)+'</h3><p class="hint">'+esc(c.phone||'')+' · '+esc(c.address||'')+' · Outstanding: <b>'+inr(st.due)+'</b></p><div class="vrow"><button class="btn" type="button" id="printLedger">Print / Save PDF statement</button><button class="btn" type="button" id="closeLedger">Close ledger</button></div><div class="scroll"><table class="table"><thead><tr><th>Date</th><th>Transaction</th><th>Bill debit</th><th>Paid / credit</th><th>Running balance</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  $('#closeLedger').addEventListener('click',function(){$('#customerLedger').innerHTML='';});
+  $('#printLedger').addEventListener('click',function(){var win=window.open('','_blank');if(!win){toast('Allow pop-ups to print the statement.');return;}win.document.write('<html><head><title>Customer statement</title><style>body{font:14px Arial;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:7px;text-align:left}</style></head><body><h2>Purva Traders — Customer Statement</h2><h3>'+esc(c.name)+'</h3><p>'+esc(c.phone||'')+' '+esc(c.address||'')+'</p><p>Outstanding: '+inr(st.due)+'</p>'+$('#customerLedger').querySelector('.scroll').innerHTML+'</body></html>');win.document.close();win.focus();win.print();});
+}
+
+/* ---------- Settings ---------- */
+function bindSetting(id,key,conv){
+  var el=$(id);el.value=conv?conv.out(db.settings[key]):db.settings[key];
+  el.addEventListener('input',function(){db.settings[key]=conv?conv.inn(el.value):el.value;$('#brandName').textContent=db.settings.shop||'Counter Bill';totals();});
+}
+bindSetting('#sShop','shop');bindSetting('#sPhone','phone');bindSetting('#sAddress','address');bindSetting('#sFooter','footer');
+bindSetting('#sPaper','paper');
+bindSetting('#sRound','round',{out:function(v){return v?'1':'0';},inn:function(v){return v==='1';}});
+$('#brandName').textContent=db.settings.shop||'Counter Bill';
+
+/* ---------- Backup, restore, export ---------- */
+function stamp(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function download(name,text,type){
+  var blob=new Blob([text],{type:type}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);
+}
+function bkMsg(m,err){var s=$('#bkStatus');s.textContent=m;s.classList.toggle('err',!!err);}
+$('#bkSave').addEventListener('click',function(){
+  var data={app:'counter-bill',version:2,savedAt:Date.now(),settings:db.settings,master:db.master,history:db.history,customers:db.customers,payments:db.payments};
+  download('counter-bill-backup-'+stamp()+'.json',JSON.stringify(data),'application/json');
+  db.lastBackup=Date.now();persist();renderNotice();
+  bkMsg('Backup saved to your downloads: '+db.history.length+' bills and '+db.master.length+' items.');
+});
+$('#bkRestore').addEventListener('click',function(){$('#bkFile').click();});
+$('#bkFile').addEventListener('change',function(e){
+  var f=e.target.files[0]; if(!f) return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      var d=JSON.parse(rd.result);
+      if(!d||d.app!=='counter-bill'||!Array.isArray(d.history)||!Array.isArray(d.master)) throw new Error('bad');
+      db.settings=Object.assign({},DEFAULTS,d.settings);
+      db.master=d.master;db.history=d.history;db.customers=Array.isArray(d.customers)?d.customers:[];db.payments=Array.isArray(d.payments)?d.payments:[];
+      var maxNo=db.history.reduce(function(m,h){return Math.max(m,h.no||0);},0);
+      db.settings.nextNo=Math.max(db.settings.nextNo||1,maxNo+1);
+      db.draft=null;db.lastBackup=Date.now();
+      try{localStorage.setItem(LS,JSON.stringify(db));}catch(_){}
+      bkMsg('Restored '+db.history.length+' bills, '+db.master.length+' items and '+db.customers.length+' customers. Reloading…');
+      setTimeout(function(){location.reload();},700);
+    }catch(err){bkMsg('That file is not a Counter Bill backup.',true);}
+  };
+  rd.readAsText(f);e.target.value='';
+});
+function csvCell(v){var s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+$('#bkCsv').addEventListener('click',function(){
+  if(!db.history.length){bkMsg('No printed bills to export yet.',true);return;}
+  var rows=[['Bill no','Date','Item','Qty','Unit','Rate','Amount','Bill total']];
+  db.history.slice().sort(function(a,b){return a.no-b.no;}).forEach(function(h){
+    h.items.forEach(function(it,i){
+      rows.push([pad(h.no),fmtDate(h.at),it.name,num(it.qty),it.unit||'',num(it.rate),amt(it),i===0?h.total:'']);
+    });
+  });
+  download('counter-bill-sales-'+stamp()+'.csv','﻿'+rows.map(function(r){return r.map(csvCell).join(',');}).join('\r\n'),'text/csv');
+  bkMsg('Sales exported as a CSV file. It opens in Excel or Google Sheets.');
+});
+function renderNotice(){
+  var n=$('#notice'),msg='',showBtn=false;
+  if(!storageOk){msg='This view cannot keep your data after you close it. Open the file in Chrome, and use Save backup in Settings.';showBtn=true;}
+  else if(db.history.length&&(!db.lastBackup||Date.now()-db.lastBackup>7*864e5)){
+    msg=db.lastBackup?'Last backup was on '+new Date(db.lastBackup).toLocaleDateString('en-IN')+'. Save a fresh one so your bills are safe.':'You have not saved a backup yet. Save one so your bills are safe.';showBtn=true;
+  }
+  n.hidden=!msg;
+  n.innerHTML=msg?'<span>'+esc(msg)+'</span>'+(showBtn?'<button type="button" class="btn" id="noticeGo">Open backup</button>':''):'';
+}
+$('#notice').addEventListener('click',function(e){if(e.target.id==='noticeGo')showTab('settings');});
+
+/* ---------- Tabs ---------- */
+function showTab(name){
+  document.querySelectorAll('.tabs [data-tab]').forEach(function(b){
+    var on=b.dataset.tab===name;
+    b.classList.toggle('on',on);
+    if(on) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
+  });
+  ['bill','items','history','customers','settings'].forEach(function(t){$('#tab-'+t).hidden=t!==name;});
+  if(name==='customers') renderCustomers();
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('.tabs [data-tab]').forEach(function(b){
+  b.addEventListener('click',function(){showTab(b.dataset.tab);});
+});
+
+/* ---------- Voice ---------- */
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var rec=null,listening=false;
+var micBtn=$('#micBtn'),voiceBox=$('#voiceBox'),vs=$('#voiceStatus');
+$('#langSel').value=db.settings.lang;
+$('#uiEnglish').addEventListener('click',function(){setUiLanguage('en');});$('#uiMarathi').addEventListener('click',function(){setUiLanguage('mr');});
+$('#langSel').addEventListener('change',function(e){db.settings.lang=e.target.value;persist();});
+function setVoice(msg,err){vs.textContent=msg;vs.classList.toggle('err',!!err);}
+function micUi(){
+  micBtn.classList.toggle('live',listening);micBtn.setAttribute('aria-pressed',listening?'true':'false');
+  micBtn.setAttribute('aria-label',listening?'Stop listening':'Start speaking your list');
+  $('#micLabel').textContent=listening?'Listening. Tap to stop and add.':'Tap and speak your list';
+}
+function commitVoice(){
+  var items=parseSpoken(voiceBox.value,db.master);
+  if(!items.length){setVoice('No items found in that. Try: "2 kg sugar 45, 1 soap 30".',true);return;}
+  addItems(items);voiceBox.value='';
+  var missing=items.filter(function(i){return !(num(i.rate)>0);}).length;
+  setVoice('Added '+items.length+' item'+(items.length===1?'':'s')+'.'+(missing?' '+missing+' need'+(missing===1?'s':'')+' a rate (highlighted).':' Check the rates below.'));
+}
+function showMicHelp(){
+  var note=$('#micHelpNote'),msgs=[];
+  if(location.protocol==='file:') msgs.push('This page is opened from a file, so the browser may block or forget the microphone. If it keeps blocking, open the page from an https web address instead.');
+  msgs.push('If you opened the file from WhatsApp, Files or another app, open it in Chrome (menu, then Open in Chrome).');
+  note.textContent=msgs.join(' ');
+  $('#micHelp').hidden=false;
+}
+function hideMicHelp(){$('#micHelp').hidden=true;}
+function askMic(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) return Promise.resolve('skip');
+  return navigator.mediaDevices.getUserMedia({audio:true}).then(function(s){s.getTracks().forEach(function(t){t.stop();});return 'ok';}).catch(function(e){return (e&&e.name)||'error';});
+}
+function startVoice(){
+  if(!SR){setVoice('This browser has no voice typing. Open this page in Chrome or Edge, or tap the microphone key on your keyboard while the box above is selected.',true);voiceBox.focus();return;}
+  setVoice('Asking the browser for the microphone…');
+  askMic().then(function(res){
+    if(res==='NotAllowedError'||res==='SecurityError'||res==='PermissionDeniedError'){
+      setVoice('The microphone is blocked for this page.',true);showMicHelp();return;
+    }
+    if(res==='NotFoundError'||res==='DevicesNotFoundError'){setVoice('No microphone found on this device.',true);return;}
+    hideMicHelp();beginRecognition();
+  });
+}
+function beginRecognition(){
+  try{rec=new SR();rec.lang=db.settings.lang;rec.continuous=true;rec.interimResults=true;}
+  catch(e){setVoice('Could not start the microphone.',true);return;}
+  var finals=voiceBox.value.trim();if(finals) finals+=', ';
+  rec.onresult=function(e){
+    var interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var r=e.results[i];
+      if(r.isFinal) finals+=r[0].transcript.trim()+', '; else interim+=r[0].transcript;
+    }
+    voiceBox.value=finals+interim;
+  };
+  rec.onerror=function(e){
+    if(e.error==='no-speech'||e.error==='aborted') return;
+    listening=false;
+    var m={'not-allowed':'The microphone is blocked for this page.','service-not-allowed':'Voice typing is not allowed on this device.','audio-capture':'No microphone found.','network':'Voice typing needs an internet connection.'};
+    setVoice(m[e.error]||('Voice error: '+e.error),true);
+    if(e.error==='not-allowed'||e.error==='service-not-allowed') showMicHelp();
+  };
+  rec.onend=function(){
+    if(listening){try{rec.start();return;}catch(_){}}
+    listening=false;micUi();
+    if(voiceBox.value.trim()&&!vs.classList.contains('err')) commitVoice();
+  };
+  listening=true;
+  try{rec.start();}catch(e){listening=false;setVoice('Could not start the microphone.',true);}
+  micUi();if(listening) setVoice('Listening… say your items, then tap the mic again.');
+}
+function stopVoice(){listening=false;try{rec.stop();}catch(_){}micUi();}
+micBtn.addEventListener('click',function(){listening?stopVoice():startVoice();});
+$('#micRetry').addEventListener('click',function(){startVoice();});
+try{
+  navigator.permissions.query({name:'microphone'}).then(function(p){
+    p.onchange=function(){if(p.state==='granted'){hideMicHelp();setVoice('Microphone allowed. Tap the mic to speak.');}};
+  }).catch(function(){});
+}catch(_){}
+$('#voiceAdd').addEventListener('click',function(){if(listening)stopVoice();else commitVoice();});
+if(!SR) setVoice('Voice typing works in Chrome or Edge. In other browsers, type the list or use your keyboard\'s microphone key.');
+
+/* ---------- Boot ---------- */
+$('#disc').value=bill.disc||'';$('#discType').value=bill.discType||'amt';$('#received').value=bill.received||'';
+renderChips();renderMaster();renderHistory();renderRows();renderCustomers();$('#billType').value=bill.billType||'retail';renderBillCustomerOptions();$('#billCustomer').value=bill.customerId||'';updateBillCustomerUi();renderNotice();
+$('#brandName').textContent=db.settings.shop||'Purva Traders';$('#sShop').value=db.settings.shop||'Purva Traders';setUiLanguage(db.settings.uiLang||'en');
+})();
+</script>
+</body>
+</html>
